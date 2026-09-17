@@ -411,7 +411,7 @@ def handle_file(buf):
         result["entries"] = ents
         # cache raw bytes for later export (not in JSON)
         _CACHE["bundle"] = b
-        return json.dumps(result, ensure_ascii=False)
+        return json.dumps(result)
     except Exception as ex:
         try:
             pa = parse_assets(buf)
@@ -421,10 +421,10 @@ def handle_file(buf):
             result["assets"] = [{"pathId":a["pathId"],"offset":a["offset"],"size":a["size"],
                 "classId":a["classId"],"typeName":a["typeName"],"name":asset_name(pa,a)} for a in pa["assets"]]
             _CACHE["assets"] = pa
-            return json.dumps(result, ensure_ascii=False)
+            return json.dumps(result)
         except Exception as ex2:
             result["error"] = "Bundle: %s | Assets: %s" % (ex, ex2)
-            return json.dumps(result, ensure_ascii=False)
+            return json.dumps(result)
 
 _CACHE = {}
 
@@ -443,7 +443,7 @@ def get_texture_preview(entry_idx, asset_idx):
         else:
             return json.dumps({"error":"no file loaded"})
         tex = parse_texture(ab, pa["header"]["endianness"]==1)
-        return json.dumps(tex, ensure_ascii=False)
+        return json.dumps(tex)
     except Exception as e:
         return json.dumps({"error": str(e)})
 
@@ -469,3 +469,50 @@ def get_entry_bytes(entry_idx):
     if _CACHE.get("bundle"):
         return base64.b64encode(bytes(_CACHE["bundle"]["entries"][entry_idx]["data"])).decode()
     return ""
+
+# ---------- Smart texture export (PNG when decodable, else KTX container) ----------
+_KTX_GL = {
+    32: (0x8C00, 0x1907),   # PVRTC_RGB4  -> GL_COMPRESSED_RGB_PVRTC_4BPPV1_IMG, GL_RGB
+    33: (0x8C02, 0x1908),   # PVRTC_RGBA4 -> GL_COMPRESSED_RGBA_PVRTC_4BPPV1_IMG, GL_RGBA
+    34: (0x8D64, 0x1907),   # ETC1_RGB4   -> GL_ETC1_RGB8_OES, GL_RGB
+    45: (0x9274, 0x1907),   # ETC2_RGB8
+    46: (0x9276, 0x1908),   # ETC2_RGBA8 (RGB4+A1)
+    47: (0x9278, 0x1908),   # ETC2_RGBA8
+    48: (0x93B0, 0x1908),   # ASTC 4x4 RGBA
+    49: (0x93B1, 0x1908), 50: (0x93B2, 0x1908), 51: (0x93B3, 0x1908), 52: (0x93B4, 0x1908), 53: (0x93B5, 0x1908),
+}
+
+def _ktx_wrap(img_data, w, h, fmt):
+    glif, base = _KTX_GL.get(fmt, (0, 0x1907))
+    if glif == 0:
+        return None  # unknown format -> caller falls back to bin
+    ident = bytes([0xAB, 0x4B, 0x54, 0x58, 0x20, 0x31, 0x31, 0xBB, 0x0D, 0x0A, 0x1A, 0x0A])
+    hdr = struct.pack("<12sIIIIIIIIIIIII", ident, 0x04030201, 0, 1, 0, glif, base, w, h, 0, 0, 1, 1, 0)
+    size = len(img_data)
+    pad = (4 - (size % 4)) % 4
+    return hdr + struct.pack("<I", size) + bytes(img_data) + bytes(pad)
+
+def export_texture(entry_idx, asset_idx):
+    """Returns JSON: {filename, base64, kind}. PNG if decodable, else KTX container."""
+    try:
+        if _CACHE.get("bundle"):
+            entry = _CACHE["bundle"]["entries"][entry_idx]
+            pa = parse_assets(entry["data"])
+        elif _CACHE.get("assets"):
+            pa = _CACHE["assets"]
+        else:
+            return json.dumps({"error": "no file"})
+        ast = pa["assets"][asset_idx]
+        ab = extract_asset(pa, ast)
+        tex = parse_texture(ab, pa["header"]["endianness"] == 1)
+        name = (tex.get("name") or ast["typeName"]).replace("/", "_")
+        if tex.get("png"):
+            b64 = tex["png"].split(",", 1)[1]
+            return json.dumps({"filename": name + ".png", "base64": b64, "kind": "PNG"})
+        ktx = _ktx_wrap(tex.get("imgLen") and ab[-tex["imgLen"]:], tex["width"], tex["height"], tex.get("fmt", 0))
+        if ktx:
+            return json.dumps({"filename": name + ".ktx", "base64": base64.b64encode(ktx).decode(), "kind": "KTX (" + tex["format"] + ")"})
+        # fallback: raw bin
+        return json.dumps({"filename": name + ".bin", "base64": base64.b64encode(bytes(ab)).decode(), "kind": "raw"})
+    except Exception as e:
+        return json.dumps({"error": str(e)})
