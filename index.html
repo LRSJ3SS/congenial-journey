@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UABE Web (Python/Pyodide) — Unity Asset Bundle Explorer</title>
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<header>
+  <div class="logo">UABE</div>
+  <div>
+    <h1>Unity Assets Bundle Extractor <span style="color:var(--accent2);font-weight:400;font-size:14px;">Python (Pyodide)</span></h1>
+    <div class="sub">Lógica em Python rodando no navegador via WebAssembly — estático, funciona no GitHub Pages</div>
+  </div>
+  <div class="actions">
+    <button class="btn" id="btnOpen" disabled>Abrir arquivo...</button>
+    <button class="btn hidden" id="btnClose">Fechar</button>
+  </div>
+</header>
+
+<main>
+  <div id="dropzone">
+    <div class="dz-inner" id="dzInner">
+      <div class="icon">&#128230;</div>
+      <h2 id="dzTitle">Carregando o ambiente Python...</h2>
+      <p id="dzSub">Aguardando Pyodide + Pillow (primeiro acesso ~10 MB em cache).</p>
+      <div class="formats" id="dzFormats" style="display:none;">
+        <span>.unity3d</span><span>.bundle</span><span>.assetbundle</span><span>.assets</span><span>UnityFS</span>
+      </div>
+    </div>
+    <input type="file" id="fileInput" class="hidden" accept=".unity3d,.bundle,.assetbundle,.assets,*/*">
+  </div>
+
+  <div id="app">
+    <aside id="sidebar">
+      <div class="title"><span>Estrutura</span><span id="fileName" style="text-transform:none;max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;"></span></div>
+      <div id="tree"></div>
+    </aside>
+    <section id="content">
+      <div id="details">
+        <div class="panel"><h3>&#9432; Selecione um item na árvore</h3></div>
+      </div>
+    </section>
+  </div>
+</main>
+
+<div id="status">
+  <span id="statusMain">Inicializando Python...</span>
+  <span id="statusExtra"></span>
+</div>
+
+<script src="https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
