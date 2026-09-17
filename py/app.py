@@ -1,5 +1,11 @@
 # UABE Web - Python core (runs in browser via Pyodide, static-hostable on GitHub Pages)
-import struct, json, base64, io, lzma
+import struct, json, base64, io
+try:
+    import lzma as _lzma
+    _HAS_LZMA = True
+except Exception:
+    _lzma = None
+    _HAS_LZMA = False
 
 # ---------- helpers ----------
 def u32be(b, o): return struct.unpack_from(">I", b, o)[0]
@@ -69,17 +75,13 @@ def decompress_block(ctype, data, out_size):
     if ctype == 0: return bytes(data)
     if ctype in (2,3): return lz4_decompress(data, out_size)
     if ctype == 1:  # LZMA: UnityFS uses raw LZMA stream with 5-byte properties header
-        # Unity LZMA block: 5 bytes props + 8 bytes uncompressed size + 8 bytes compressed size + data
-        # But block data here may be just the raw LZMA stream. Try raw decode with filter.
+        if not _HAS_LZMA:
+            raise ValueError("LZMA não disponível neste ambiente Python.")
         try:
-            # Standard UnityFS LZMA block starts with 5-byte LZMA properties.
             props = data[:5]
-            dec = lzma.LZMADecoder()
-            # LZMADecoder expects properties bytes then compressed data.
-            # We need to set output size. Use decompress with format alone? Use raw decoder.
-            import lzma as _l
-            filt = [{"id": _l.FILTER_LZMA1, "dict_size": struct.unpack_from("<I", props, 1)[0], "lc": props[0] % 9, "lp": (props[0] // 9) % 5, "pb": props[0] // 45}]
-            dec2 = _l.LZMADecompressor(format=_l.FORMAT_RAW, filters=filt)
+            filt = [{"id": _lzma.FILTER_LZMA1, "dict_size": struct.unpack_from("<I", props, 1)[0],
+                     "lc": props[0] % 9, "lp": (props[0] // 9) % 5, "pb": props[0] // 45}]
+            dec2 = _lzma.LZMADecompressor(format=_lzma.FORMAT_RAW, filters=filt)
             out = dec2.decompress(data[5:], max_length=out_size)
             return out
         except Exception as e:
@@ -362,7 +364,7 @@ def parse_texture(asset_bytes, be):
         if 1<=w<=16384 and 1<=h<=16384 and 1<=cs<=len(asset_bytes) and 0<=fmt<=200:
             found = (w,h,cs,fmt); break
     if not found:
-        return {"error":"NÃ£o foi possÃ­vel identificar o cabeÃ§alho da textura.","name":name}
+        return {"error":"Não foi possível identificar o cabeçalho da textura.","name":name}
     w,h,cs,fmt = found
     fmtName = TEX_NAMES.get(fmt, "Format_%d"%fmt)
     img = asset_bytes[len(asset_bytes)-cs:]
