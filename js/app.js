@@ -47,7 +47,7 @@
       if (!resp.ok) {
         throw new Error('Não foi possível carregar py/app.py (HTTP ' + resp.status + '). Verifique se a pasta py/ foi enviada ao repositório e se o .nojekyll existe.');
       }
-      var code = await resp.text();
+      var code = new TextDecoder('utf-8').decode(await resp.arrayBuffer());
       try {
         pyodide.runPython(code);
       } catch (pyErr) {
@@ -183,6 +183,21 @@
     });
   }
 
+  function doExport(entryIdx, assetIdx, a) {
+    if (a && a.classId === 28) {
+      try {
+        var r = JSON.parse(pyodide.globals.get('export_texture')(entryIdx, assetIdx));
+        if (r.base64) {
+          downloadBase64(r.base64, r.filename);
+          setStatus('Exportado: ' + r.filename + ' (' + r.kind + ')', 'ok');
+          return;
+        }
+      } catch (e) { /* fall through to bin */ }
+    }
+    var b64 = pyodide.globals.get('get_asset_bytes')(entryIdx, assetIdx);
+    downloadBase64(b64, (a && a.name ? a.name : (a ? a.typeName : 'asset')) + '_' + (a ? a.pathId : assetIdx) + '.bin');
+  }
+
   function assetsTable(assets, entryIdx) {
     var p = panel('&#128203; Assets (' + assets.length + ')', '<div style="overflow-x:auto;max-height:480px;overflow-y:auto;"><table class="assets"><thead><tr><th>#</th><th>Path ID</th><th>Nome</th><th>Tipo</th><th class="num">Tamanho</th><th></th></tr></thead><tbody id="assetTbody"></tbody></table></div>');
     setTimeout(function () {
@@ -192,10 +207,7 @@
       assets.forEach(function (a, i) {
         var tr = document.createElement('tr');
         tr.innerHTML = '<td>' + i + '</td><td class="mono">' + a.pathId + '</td><td>' + (a.name ? escapeHtml(a.name) : '<span style="color:var(--muted)">—</span>') + '</td><td>' + escapeHtml(a.typeName) + '</td><td class="num">' + fmtSize(a.size) + '</td><td><button class="export-btn">Exportar</button></td>';
-        tr.querySelector('.export-btn').addEventListener('click', function () {
-          var b64 = pyodide.globals.get('get_asset_bytes')(entryIdx, i);
-          downloadBase64(b64, (a.name || a.typeName) + '_' + a.pathId + '.bin');
-        });
+        tr.querySelector('.export-btn').addEventListener('click', function () { doExport(entryIdx, i, a); });
         frag.appendChild(tr);
       });
       tb.appendChild(frag);
@@ -210,10 +222,7 @@
       '<div style="margin-top:14px;"><button class="btn primary" id="expAsset">Exportar asset (.bin)</button></div>';
     $('details').innerHTML = '';
     $('details').appendChild(panel('&#9654; ' + escapeHtml(a.typeName) + ' #' + a.pathId, html));
-    document.getElementById('expAsset').addEventListener('click', function () {
-      var b64 = pyodide.globals.get('get_asset_bytes')(entryIdx, assetIdx);
-      downloadBase64(b64, (a.name || a.typeName) + '_' + a.pathId + '.bin');
-    });
+    document.getElementById('expAsset').addEventListener('click', function () { doExport(entryIdx, assetIdx, a); });
     if (a.classId === 28) {
       var prev = panel('&#128444; Pré-visualização', '<p><span class="spinner"></span> Decodificando textura em Python...</p>');
       $('details').appendChild(prev);
