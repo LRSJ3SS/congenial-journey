@@ -36,19 +36,36 @@
       setStatus('<span class="spinner"></span>Carregando Pyodide (WebAssembly)...');
       pyodide = await loadPyodide();
       setStatus('<span class="spinner"></span>Carregando Pillow (imagens)...');
-      await pyodide.loadPackage('pillow');
+      try {
+        await pyodide.loadPackage('pillow');
+      } catch (pillowErr) {
+        // Pillow optional — parsing still works, only texture PNG preview is disabled.
+        console.warn('Pillow não disponível:', pillowErr);
+      }
       setStatus('<span class="spinner"></span>Carregando parser Python...');
-      var code = await (await fetch('py/app.py')).text();
-      pyodide.runPython(code);
+      var resp = await fetch('py/app.py');
+      if (!resp.ok) {
+        throw new Error('Não foi possível carregar py/app.py (HTTP ' + resp.status + '). Verifique se a pasta py/ foi enviada ao repositório e se o .nojekyll existe.');
+      }
+      var code = await resp.text();
+      try {
+        pyodide.runPython(code);
+      } catch (pyErr) {
+        var full = (pyErr.message || String(pyErr)).slice(0, 1200);
+        $('dzTitle').textContent = 'Erro no código Python';
+        $('dzSub').innerHTML = '<pre style="text-align:left;max-width:560px;overflow:auto;max-height:200px;background:#1a1b21;padding:12px;border-radius:6px;font-size:11px;color:#f0a0a0;white-space:pre-wrap;">' + escapeHtml(full) + '</pre>';
+        setStatus('Erro ao interpretar app.py — veja detalhes acima.', 'err');
+        return;
+      }
       $('btnOpen').disabled = false;
       $('dzTitle').textContent = 'Arraste um arquivo aqui';
       $('dzSub').textContent = 'ou clique para selecionar. Processamento em Python, 100% local no navegador.';
       $('dzFormats').style.display = 'block';
       setStatus('Pronto. Python carregado. Arraste um bundle.', 'ok');
     } catch (e) {
-      setStatus('Erro ao carregar Pyodide: ' + e.message, 'err');
+      setStatus('Erro: ' + e.message, 'err');
       $('dzTitle').textContent = 'Falha ao carregar';
-      $('dzSub').textContent = 'Verifique sua conexÃ£o (Pyodide Ã© carregado via CDN).';
+      $('dzSub').innerHTML = '<div style="max-width:520px;">' + escapeHtml(e.message) + '<br><br>Verifique sua conexão (Pyodide é carregado via CDN) e se a pasta <b>py/</b> foi enviada ao repositório.</div>';
     }
   }
 
@@ -65,7 +82,7 @@
         var jsonStr = handle(u8);
         var result = JSON.parse(jsonStr);
         if (result.error) {
-          setStatus('NÃ£o foi possÃ­vel abrir: ' + result.error, 'err');
+          setStatus('Não foi possível abrir: ' + result.error, 'err');
           return;
         }
         state.data = result;
@@ -142,7 +159,7 @@
   function showBundleInfo() {
     var r = state.data, i = r.info, html;
     if (r.kind === 'bundle') {
-      html = '<div class="kv">' + kv('Assinatura', i.signature, 'tag info') + kv('VersÃ£o do bundle', i.fileVersion) + kv('Engine', i.engine) + kv('CompressÃ£o', i.compression, 'tag ok') + kv('Tamanho total', fmtSize(i.totalSize)) + kv('Blocos', i.blockCount) + kv('Entradas', i.entryCount) + '</div>';
+      html = '<div class="kv">' + kv('Assinatura', i.signature, 'tag info') + kv('Versão do bundle', i.fileVersion) + kv('Engine', i.engine) + kv('Compressão', i.compression, 'tag ok') + kv('Tamanho total', fmtSize(i.totalSize)) + kv('Blocos', i.blockCount) + kv('Entradas', i.entryCount) + '</div>';
       $('details').innerHTML = '';
       $('details').appendChild(panel('&#128230; Bundle', html));
     } else {
@@ -174,7 +191,7 @@
       var frag = document.createDocumentFragment();
       assets.forEach(function (a, i) {
         var tr = document.createElement('tr');
-        tr.innerHTML = '<td>' + i + '</td><td class="mono">' + a.pathId + '</td><td>' + (a.name ? escapeHtml(a.name) : '<span style="color:var(--muted)">â</span>') + '</td><td>' + escapeHtml(a.typeName) + '</td><td class="num">' + fmtSize(a.size) + '</td><td><button class="export-btn">Exportar</button></td>';
+        tr.innerHTML = '<td>' + i + '</td><td class="mono">' + a.pathId + '</td><td>' + (a.name ? escapeHtml(a.name) : '<span style="color:var(--muted)">—</span>') + '</td><td>' + escapeHtml(a.typeName) + '</td><td class="num">' + fmtSize(a.size) + '</td><td><button class="export-btn">Exportar</button></td>';
         tr.querySelector('.export-btn').addEventListener('click', function () {
           var b64 = pyodide.globals.get('get_asset_bytes')(entryIdx, i);
           downloadBase64(b64, (a.name || a.typeName) + '_' + a.pathId + '.bin');
@@ -198,7 +215,7 @@
       downloadBase64(b64, (a.name || a.typeName) + '_' + a.pathId + '.bin');
     });
     if (a.classId === 28) {
-      var prev = panel('&#128444; PrÃ©-visualizaÃ§Ã£o', '<p><span class="spinner"></span> Decodificando textura em Python...</p>');
+      var prev = panel('&#128444; Pré-visualização', '<p><span class="spinner"></span> Decodificando textura em Python...</p>');
       $('details').appendChild(prev);
       setTimeout(function () {
         try {
@@ -206,9 +223,9 @@
           if (tex.error) {
             prev.innerHTML = '<h3>&#128444; Textura</h3><p style="color:var(--warn);">' + escapeHtml(tex.error) + '</p>';
           } else if (tex.png) {
-            prev.innerHTML = '<h3>&#128444; Textura: ' + escapeHtml(tex.name || '') + '</h3><img src="' + tex.png + '" style="max-width:100%;image-rendering:pixelated;border:1px solid var(--border);border-radius:6px;background:repeating-conic-gradient(#333 0% 25%,#444 0% 50%) 50% / 16px 16px;"><div style="margin-top:10px;font-size:12px;color:var(--muted);font-family:var(--mono);">' + tex.width + 'Ã' + tex.height + ' Â· ' + tex.format + '</div>';
+            prev.innerHTML = '<h3>&#128444; Textura: ' + escapeHtml(tex.name || '') + '</h3><img src="' + tex.png + '" style="max-width:100%;image-rendering:pixelated;border:1px solid var(--border);border-radius:6px;background:repeating-conic-gradient(#333 0% 25%,#444 0% 50%) 50% / 16px 16px;"><div style="margin-top:10px;font-size:12px;color:var(--muted);font-family:var(--mono);">' + tex.width + '×' + tex.height + ' · ' + tex.format + '</div>';
           } else {
-            prev.innerHTML = '<h3>&#128444; Textura identificada</h3><p style="color:var(--warn);">Formato ' + escapeHtml(tex.format) + ' (' + tex.width + 'Ã' + tex.height + ') ainda nÃ£o tem decodificador. Use a exportaÃ§Ã£o bruta.</p>';
+            prev.innerHTML = '<h3>&#128444; Textura identificada</h3><p style="color:var(--warn);">Formato ' + escapeHtml(tex.format) + ' (' + tex.width + '×' + tex.height + ') ainda não tem decodificador. Use a exportação bruta.</p>';
           }
         } catch (e) {
           prev.innerHTML = '<h3>&#128444; Textura</h3><p style="color:var(--err);">Erro: ' + escapeHtml(e.message) + '</p>';
