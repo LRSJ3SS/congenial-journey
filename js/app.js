@@ -43,7 +43,7 @@
         console.warn('Pillow não disponível:', pillowErr);
       }
       setStatus('<span class="spinner"></span>Carregando parser Python...');
-      var resp = await fetch('py/app.py');
+      var resp = await fetch('py/app.py?v=5');
       if (!resp.ok) {
         throw new Error('Não foi possível carregar py/app.py (HTTP ' + resp.status + '). Verifique se a pasta py/ foi enviada ao repositório e se o .nojekyll existe.');
       }
